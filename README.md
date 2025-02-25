@@ -39,6 +39,7 @@ poetry install
 ### 1. 数据获取与处理
 ```bash
 python process_stock_data.py
+poetry run python process_stock_data.py
 ```
 - 从Yahoo Finance下载股票数据
 - 计算技术指标（如MA, RSI等）
@@ -48,6 +49,7 @@ python process_stock_data.py
 ### 2. LSTM预测模型
 ```bash
 python stock_prediction_lstm.py
+poetry run python stock_prediction_lstm.py
 ```
 - 使用LSTM模型预测股票价格
 - 模型训练、验证、评估
@@ -57,6 +59,7 @@ python stock_prediction_lstm.py
 ### 3. 强化学习交易代理
 ```bash
 python RLagent.py
+poetry run python RLagent.py
 ```
 - 基于深度进化策略的交易代理
 - 自动学习交易策略
@@ -66,6 +69,7 @@ python RLagent.py
 ### 4. 可视化界面
 ```bash
 python gradio_interface.py
+poetry run python gradio_interface.py
 ```
 - 提供Web界面进行交互
 - 可视化预测结果和交易决策
