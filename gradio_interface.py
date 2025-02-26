@@ -8,7 +8,10 @@ import yfinance as yf
 from stock_prediction_lstm import predict, format_feature
 from RLagent import process_stock
 from datetime import datetime
-from process_stock_data import get_stock_data, clean_csv_files
+from process_stock_data import get_stock_data as get_us_stock_data
+from process_stock_data import clean_csv_files
+from process_cn_stock_data import get_stock_data as get_cn_stock_data
+from process_cn_stock_data import get_stock_code
 
 # 移除代理设置
 # os.environ['HTTP_PROXY'] = 'http://127.0.0.1:7890'
@@ -22,39 +25,80 @@ os.makedirs(SAVE_DIR, exist_ok=True)
 os.makedirs('tmp/gradio/pic', exist_ok=True)
 os.makedirs('tmp/gradio/ticker', exist_ok=True)
 
-def validate_ticker(ticker):
+def validate_ticker(ticker, market):
     """验证股票代码格式并标准化"""
     ticker = ticker.strip().upper()
-    # 常见的股票代码映射
-    ticker_map = {
-        'APPLE': 'AAPL',
-        'MICROSOFT': 'MSFT',
-        'GOOGLE': 'GOOGL',
-        'AMAZON': 'AMZN',
-        'TESLA': 'TSLA'
-    }
-    return ticker_map.get(ticker, ticker)
-
-def get_data(ticker, start_date, end_date, progress=gr.Progress()):
-    data_folder = 'tmp/gradio/ticker'
-    ticker = validate_ticker(ticker)  # 验证并标准化股票代码
-    temp_path = f'{data_folder}/{ticker.lower()}.csv'
-    try:        
-        # 获取并保存所有股票数据
-        progress(0, desc="开始获取股票数据...")
-        stock_data = get_stock_data(ticker, start_date, end_date)
+    
+    if market == "美股":
+        # 常见的美股代码映射
+        ticker_map = {
+            'APPLE': 'AAPL',
+            'MICROSOFT': 'MSFT',
+            'GOOGLE': 'GOOGL',
+            'AMAZON': 'AMZN',
+            'TESLA': 'TSLA'
+        }
+        return ticker_map.get(ticker, ticker)
+    else:  # A股
+        # 如果是股票名称，尝试转换为代码
+        if not ticker.isdigit() and not ticker.startswith(('sh', 'sz', 'SH', 'SZ')):
+            # 常见的A股名称映射
+            ticker_map = {
+                '茅台': '600519',
+                '平安': '601318',
+                '招商银行': '600036',
+                '五粮液': '000858',
+                '贵州茅台': '600519',
+                '中国平安': '601318'
+            }
+            if ticker in ticker_map:
+                return ticker_map[ticker]
         
-        if stock_data.empty:
-            return None, f"无法获取股票 {ticker} 的数据，请检查股票代码是否正确"
+        # 使用process_cn_stock_data中的函数处理
+        return get_stock_code(ticker)
+
+def get_data(ticker, start_date, end_date, market, progress=gr.Progress()):
+    data_folder = 'tmp/gradio/ticker'
+    
+    # 根据市场选择不同的处理函数
+    if market == "美股":
+        ticker = validate_ticker(ticker, market)
+        temp_path = f'{data_folder}/{ticker.lower()}.csv'
+        try:        
+            # 获取并保存所有股票数据
+            progress(0, desc="开始获取美股数据...")
+            stock_data = get_us_stock_data(ticker, start_date, end_date)
             
-        progress(0.4, desc="计算技术指标...")
-        stock_data.to_csv(temp_path)
-        progress(0.7, desc="处理数据格式...")
-        clean_csv_files(temp_path)
-        progress(1.0, desc="数据获取完成")
-        return temp_path, f"成功获取 {ticker} 的数据"
-    except Exception as e:
-        return None, f"获取数据出错: {str(e)}"
+            if stock_data.empty:
+                return None, f"无法获取股票 {ticker} 的数据，请检查股票代码是否正确"
+                
+            progress(0.4, desc="计算技术指标...")
+            stock_data.to_csv(temp_path)
+            progress(0.7, desc="处理数据格式...")
+            clean_csv_files(temp_path)
+            progress(1.0, desc="数据获取完成")
+            return temp_path, f"成功获取 {ticker} 的数据"
+        except Exception as e:
+            return None, f"获取数据出错: {str(e)}"
+    else:  # A股
+        ticker = validate_ticker(ticker, market)
+        temp_path = f'{data_folder}/{ticker.lower()}.csv'
+        try:        
+            # 获取并保存所有股票数据
+            progress(0, desc="开始获取A股数据...")
+            stock_data = get_cn_stock_data(ticker, start_date, end_date)
+            
+            if stock_data.empty:
+                return None, f"无法获取股票 {ticker} 的数据，请检查股票代码是否正确"
+                
+            progress(0.4, desc="计算技术指标...")
+            stock_data.to_csv(temp_path)
+            progress(0.7, desc="处理数据格式...")
+            clean_csv_files(temp_path)
+            progress(1.0, desc="数据获取完成")
+            return temp_path, f"成功获取 {ticker} 的数据"
+        except Exception as e:
+            return None, f"获取数据出错: {str(e)}"
 
 def process_and_predict(temp_csv_path, epochs, batch_size, learning_rate, 
                        window_size, initial_money, agent_iterations, save_dir):
@@ -115,8 +159,15 @@ with gr.Blocks() as demo:
         with gr.Column(scale=2):
             ticker_input = gr.Textbox(
                 label="股票代码",
-                placeholder="输入股票代码（如：AAPL、MSFT）或公司名称（如：APPLE、MICROSOFT）",
+                placeholder="输入股票代码（如：AAPL、600519）或公司名称（如：APPLE、贵州茅台）",
                 info="支持常见公司名称自动转换为股票代码"
+            )
+        with gr.Column(scale=1):
+            market_selector = gr.Radio(
+                ["美股", "A股"], 
+                label="市场选择", 
+                value="A股",
+                info="选择股票市场"
             )
         with gr.Column(scale=2):
             start_date = gr.Textbox(
@@ -193,7 +244,7 @@ with gr.Blocks() as demo:
     # 获取数据按钮事件
     fetch_result = fetch_button.click(
         fn=get_data,
-        inputs=[ticker_input, start_date, end_date],
+        inputs=[ticker_input, start_date, end_date, market_selector],
         outputs=[temp_csv_state, status_output]
     )
     
