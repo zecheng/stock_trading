@@ -10,9 +10,10 @@ from RLagent import process_stock
 from datetime import datetime
 from process_stock_data import get_stock_data, clean_csv_files
 
-os.environ['HTTP_PROXY'] = 'http://127.0.0.1:7890'
-os.environ['HTTPS_PROXY'] = 'http://127.0.0.1:7890'
-os.environ['NO_PROXY'] = 'localhost,127.0.0.1'
+# 移除代理设置
+# os.environ['HTTP_PROXY'] = 'http://127.0.0.1:7890'
+# os.environ['HTTPS_PROXY'] = 'http://127.0.0.1:7890'
+# os.environ['NO_PROXY'] = 'localhost,127.0.0.1'
 
 warnings.filterwarnings("ignore")
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -21,19 +22,37 @@ os.makedirs(SAVE_DIR, exist_ok=True)
 os.makedirs('tmp/gradio/pic', exist_ok=True)
 os.makedirs('tmp/gradio/ticker', exist_ok=True)
 
+def validate_ticker(ticker):
+    """验证股票代码格式并标准化"""
+    ticker = ticker.strip().upper()
+    # 常见的股票代码映射
+    ticker_map = {
+        'APPLE': 'AAPL',
+        'MICROSOFT': 'MSFT',
+        'GOOGLE': 'GOOGL',
+        'AMAZON': 'AMZN',
+        'TESLA': 'TSLA'
+    }
+    return ticker_map.get(ticker, ticker)
+
 def get_data(ticker, start_date, end_date, progress=gr.Progress()):
     data_folder = 'tmp/gradio/ticker'
-    temp_path = f'{data_folder}/{ticker}.csv'
+    ticker = validate_ticker(ticker)  # 验证并标准化股票代码
+    temp_path = f'{data_folder}/{ticker.lower()}.csv'
     try:        
         # 获取并保存所有股票数据
         progress(0, desc="开始获取股票数据...")
         stock_data = get_stock_data(ticker, start_date, end_date)
+        
+        if stock_data.empty:
+            return None, f"无法获取股票 {ticker} 的数据，请检查股票代码是否正确"
+            
         progress(0.4, desc="计算技术指标...")
         stock_data.to_csv(temp_path)
         progress(0.7, desc="处理数据格式...")
         clean_csv_files(temp_path)
         progress(1.0, desc="数据获取完成")
-        return temp_path, "数据获取成功"
+        return temp_path, f"成功获取 {ticker} 的数据"
     except Exception as e:
         return None, f"获取数据出错: {str(e)}"
 
@@ -94,7 +113,11 @@ with gr.Blocks() as demo:
     
     with gr.Row():
         with gr.Column(scale=2):
-            ticker_input = gr.Textbox(label="股票代码 (例如: AAPL)")
+            ticker_input = gr.Textbox(
+                label="股票代码",
+                placeholder="输入股票代码（如：AAPL、MSFT）或公司名称（如：APPLE、MICROSOFT）",
+                info="支持常见公司名称自动转换为股票代码"
+            )
         with gr.Column(scale=2):
             start_date = gr.Textbox(
                 label="开始日期 (YYYY-MM-DD)", 

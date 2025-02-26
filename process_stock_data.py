@@ -55,8 +55,13 @@ def calculate_technical_indicators(data, start_date=None, end_date=None):
     
     # 相对大盘表现
     if start_date and end_date:
-        benchmark_data = yf.download('SPY', start=start_date, end=end_date)['Close']
-        data['Relative_Performance'] = (data['Close'] / benchmark_data.values) * 100
+        try:
+            benchmark_data = yf.download('SPY', start=start_date, end=end_date)['Close']
+            data['Relative_Performance'] = (data['Close'] / benchmark_data.values) * 100
+        except Exception as e:
+            print(f"计算相对大盘表现时出错: {e}")
+            # 如果无法获取基准数据，则不计算相对表现
+            data['Relative_Performance'] = np.nan
     
     # ROC指标
     data['ROC'] = data['Close'].pct_change(periods=1) * 100
@@ -88,8 +93,8 @@ def get_stock_data(ticker, start_date, end_date):
         处理后的股票数据DataFrame
     """
     # 下载股票数据
-    # data = yf.download(ticker, start=start_date, end=end_date)  # 无代理
-    data = yf.download(ticker, start=start_date, end=end_date, proxy="http://127.0.0.1:7890")  # 有代理
+    data = yf.download(ticker, start=start_date, end=end_date)  # 无代理
+    # data = yf.download(ticker, start=start_date, end=end_date, proxy="http://127.0.0.1:7890")  # 有代理
     
     # 计算技术指标
     data = calculate_technical_indicators(data, start_date, end_date)
@@ -97,18 +102,31 @@ def get_stock_data(ticker, start_date, end_date):
     return data
 
 def clean_csv_files(file_path):
-
-    df = pd.read_csv(file_path)
-            
-    # 删除第二行和第三行
-    df = df.drop([0, 1]).reset_index(drop=True)
-            
-    # 重命名列
-    df = df.rename(columns={'Price': 'Date'})
-            
-    # 保存修改后的文件
-    df.to_csv(file_path, index=False)
-    print("所有文件处理完成！")
+    """
+    清理CSV文件，删除不必要的行并重命名列
+    
+    参数:
+        file_path: CSV文件路径
+    """
+    try:
+        df = pd.read_csv(file_path)
+        
+        # 检查是否需要删除前几行
+        if df.shape[0] > 2 and 'Price' in df.columns:
+            # 删除第二行和第三行
+            df = df.drop([0, 1]).reset_index(drop=True)
+                
+            # 重命名列
+            df = df.rename(columns={'Price': 'Date'})
+                
+            # 保存修改后的文件
+            df.to_csv(file_path, index=False)
+            print(f"文件 {file_path} 已成功清理")
+        else:
+            print(f"文件 {file_path} 已经是清理过的格式或格式不符合预期")
+    except Exception as e:
+        print(f"清理文件 {file_path} 时出错: {e}")
+        raise
 
 def main():
     """主函数：执行数据收集和处理流程"""
@@ -133,15 +151,33 @@ def main():
     
     # 获取并保存所有股票数据
     print("开始下载和处理股票数据...")
+    successful_tickers = []
     for ticker in tickers:
         try:
             print(f"处理 {ticker} 中...")
             stock_data = get_stock_data(ticker, START_DATE, END_DATE)
+            
+            # 检查数据是否为空或者是否包含数据
+            if stock_data.empty or len(stock_data) < 5:  # 至少需要5个交易日的数据
+                print(f"{ticker} 没有足够的数据可供处理")
+                continue
+                
+            # 保存数据
             stock_data.to_csv(f'{data_folder}/{ticker}.csv')
-            clean_csv_files(f'{data_folder}/{ticker}.csv')
-            print(f"{ticker} 处理完成")
+            
+            try:
+                clean_csv_files(f'{data_folder}/{ticker}.csv')
+                successful_tickers.append(ticker)
+                print(f"{ticker} 处理完成")
+            except Exception as e:
+                print(f"清洗 {ticker} 数据时出错: {str(e)}")
         except Exception as e:
             print(f"处理 {ticker} 时出错: {str(e)}")
+    
+    if successful_tickers:
+        print(f"成功处理了以下股票: {', '.join(successful_tickers)}")
+    else:
+        print("没有成功处理任何股票数据，请检查网络连接或尝试使用代理")
 
 if __name__ == "__main__":
     main()
